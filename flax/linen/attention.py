@@ -109,9 +109,10 @@ def dot_product_attention(query: Array,
                   jnp.asarray(keep_prob, dtype=dtype))
     attn_weights = attn_weights * multiplier
 
-  # return weighted sum over values for each query position
-  return jnp.einsum('...hqk,...khd->...qhd', attn_weights, value,
-                    precision=precision)
+  # output weighted sum over values for each query position
+  output = jnp.einsum('...hqk,...khd->...qhd', attn_weights, value,
+                      precision=precision)
+  return output, attn_weights
 
 
 class MultiHeadDotProductAttention(Module):
@@ -136,6 +137,7 @@ class MultiHeadDotProductAttention(Module):
       attention_fn: dot_product_attention or compatible function. Accepts
         query, key, value, and returns output of shape
         `[bs, dim1, dim2, ..., dimN,, num_heads, value_channels]``
+      output_attentions: whether to output attention coefficients or not
       decode: whether to prepare and use an autoregressive cache.
   """
   num_heads: int
@@ -150,6 +152,7 @@ class MultiHeadDotProductAttention(Module):
   bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = zeros
   use_bias: bool = True
   attention_fn: Callable[[Array, Array, Array], Array] = dot_product_attention
+  output_attentions: bool = False
   decode: bool = False
 
   @compact
@@ -249,7 +252,7 @@ class MultiHeadDotProductAttention(Module):
       dropout_rng = self.make_rng('dropout')
 
     # apply attention
-    x = self.attention_fn(
+    x, attn_weights = self.attention_fn(
         query,
         key,
         value,
@@ -270,7 +273,8 @@ class MultiHeadDotProductAttention(Module):
                        dtype=self.dtype,
                        precision=self.precision,
                        name='out')(x)
-    return out
+    
+    return out, attn_weights if self.output_attentions else out
 
 
 class SelfAttention(MultiHeadDotProductAttention):
